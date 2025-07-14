@@ -5,10 +5,12 @@ const (
 	Push
 	Pop
 	Call
-	Return
+	Ret
 	Jump
 	Jz
 	Halt
+	Input
+	Print
 	Add
 	Sub
 	Mul
@@ -33,9 +35,9 @@ const (
 )
 
 const (
-	InstructionPointer uint16 = 0x0000
 	StackPointer       uint16 = 0x4000
 	FramePointer       uint16 = 0x8000
+	InstructionPointer uint16 = 0xC000
 )
 
 type Operation = byte

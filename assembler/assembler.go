@@ -126,7 +126,7 @@ func (p *parser) match(expected int) (string, error) {
 var operations = []string{
 	"NOP", "PUSH", "POP", "CALL", "RETURN", "JUMP", "JZ", "HALT",
 	"ADD", "SUB", "MUL", "DIV", "MOD", "NEG", "AND", "OR", "NOT",
-	"EQ", "NE", "LT", "LE", "GT", "GE",
+	"EQ", "NE", "LT", "LE", "GT", "GE", "INPUT", "PRINT",
 }
 var registers = []string{"IP", "SP", "FP"}
 var metasymbols = map[rune]int{
