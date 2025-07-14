@@ -45,20 +45,39 @@ func (m *Machine) step() bool {
 	mode := command & 0xC0
 	opcode := command & 0x3F
 	switch opcode {
+	case bytecode.Nop:
+		// դատարկ հրաման, ոչինչ չանել
 	case bytecode.Push:
 		m.push(mode)
 	case bytecode.Pop:
 		m.pop()
 	case bytecode.Call:
 		m.call()
-	case bytecode.Return:
+	case bytecode.Ret:
+		m.ret()
+	case bytecode.Jump:
+		m.jump()
+	case bytecode.Jz:
+		m.jz()
 	case bytecode.Input:
+		m.input()
 	case bytecode.Print:
-		value := m.basicPop()
-		fmt.Println(value)
+		m.print()
 	case bytecode.Halt:
 		return false
+	case bytecode.Neg:
+		value := m.basicPop()
+		m.basicPush(-value)
+	case bytecode.Add:
+		first := m.basicPop()
+		second := m.basicPop()
+		m.basicPush(first + second)
+	case bytecode.Sub:
+	case bytecode.Mul:
+	case bytecode.Div:
+	case bytecode.Mod:
 	default:
+		panic("Սխալ (անծանոթ) գործողության կոդ։")
 	}
 
 	return true
@@ -67,23 +86,30 @@ func (m *Machine) step() bool {
 func (m *Machine) push(mode byte) {
 	var value int32
 	switch mode {
-	case bytecode.Immediate:
+	case bytecode.Immediate: // անմիջական արժեք
 		value = m.read(m.ip)
 		m.ip += 4
-	case bytecode.Indirect:
+	case bytecode.Indirect: // անուղակի արժեք
+		// հարաբերական հասցեն
 		raddr := m.readWord(m.ip)
 		m.ip += 2
+		// բացարձակ հասցեի հաշվելը
 		address := m.resolveRelativeAddress(raddr)
+		// ստեկում գրելու արժեքը
 		value = m.read(address)
 	}
 	m.basicPush(value)
 }
 
 func (m *Machine) pop() {
+	// POP-ի հարաբերական հասցեն
 	raddr := m.readWord(m.ip)
 	m.ip += 2
+	// հաշվել բացարձակ հասցեն
 	address := m.resolveRelativeAddress(raddr)
+	// վերցնել ստեկի գագաթի արժեքն ...
 	value := m.basicPop()
+	// ... ու գրել որոշված հասցեում
 	m.write(address, value)
 }
 
@@ -114,11 +140,46 @@ func (m *Machine) ret() {
 	m.basicPush(value)
 }
 
+func (m *Machine) jump() {
+	// JUMP-ի արգումենտը (բացարձակ հասցե)
+	address := m.readWord(m.ip)
+	// շարունակել address-ից
+	m.ip = int16(address)
+}
+
+func (m *Machine) jz() {
+	// JUMP-ի արգումենտը (բացարձակ հասցե)
+	address := m.readWord(m.ip)
+	m.ip += 2
+	// ստեկի գագաթի արժեքը որպես պայման
+	value := m.basicPop()
+	if value == 0 {
+		m.ip = int16(address)
+	}
+}
+
+func (m *Machine) input() {
+	// կարդալ նշանով ամբողջ թիվ
+	var value int32
+	fmt.Scanf("%d", &value)
+	// գրել ստեկում
+	m.basicPush(value)
+}
+
+func (m *Machine) print() {
+	// վերցնել ստեկի գագաթի արժեքը
+	value := m.basicPop()
+	// ... արտածել այն
+	fmt.Println(value)
+}
+
+// տարրական ստեկային գործողություն push
 func (m *Machine) basicPush(value int32) {
 	m.write(m.sp, value)
 	m.sp += 4
 }
 
+// տարրական ստեկային գործողություն pop
 func (m *Machine) basicPop() int32 {
 	m.sp -= 4
 	return m.read(m.sp)
