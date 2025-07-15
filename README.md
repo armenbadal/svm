@@ -29,3 +29,17 @@ type Machine struct {
 բիթով որոշվում է մեքենայի ռեգիստրը (_base_), իսկ մնացած բիթերով ներկայացվում
 է նշանով արժեք (_displacement_)։ Վերջինս, գումարվելով նշված ռեգիստրի արժեքին, 
 կազմում է բացարձակ հասցեն։
+
+## Ասեմբլերի լեզուն
+
+```text
+Program   = { Line }.
+Line      = [Label] [Operation] NewLines.
+Label     = IDENT ':'.
+Operation = IDENT [Argument].
+NewLines  = '\n' { '\n' }.
+Argument  = NUMBER
+          | IDENT
+          | '[' Register ('+'|'-') NUMBER ']'.
+Register  = 'IP' | 'SP' | 'FP'.
+```
