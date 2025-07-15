@@ -3,17 +3,86 @@ package assembler
 import (
 	"bufio"
 	"fmt"
-	"slices"
+	"strconv"
+	"svm/bytecode"
 	"unicode"
 )
 
 func Assemble(file string) ([]byte, error) {
+
+	p := &parser{
+		source:       nil,
+		lookahead:    lexeme{token: xUnknown, value: "?"},
+		line:         1,
+		instructions: make([]*instruction, 0),
+		currentInstr: 0,
+		labels:       make(map[string]int16),
+		unresolved:   make(map[*instruction]string),
+	}
+	_ = p
 	return nil, nil
+}
+
+var operations = map[string]byte{
+	"NOP":   bytecode.Nop,
+	"PUSH":  bytecode.Push,
+	"POP":   bytecode.Pop,
+	"CALL":  bytecode.Call,
+	"RET":   bytecode.Ret,
+	"JUMP":  bytecode.Jump,
+	"JZ":    bytecode.Jz,
+	"HALT":  bytecode.Halt,
+	"ADD":   bytecode.Add,
+	"SUB":   bytecode.Sub,
+	"MUL":   bytecode.Mul,
+	"DIV":   bytecode.Div,
+	"MOD":   bytecode.Mod,
+	"NEG":   bytecode.Neg,
+	"AND":   bytecode.And,
+	"OR":    bytecode.Or,
+	"NOT":   bytecode.Not,
+	"EQ":    bytecode.Eq,
+	"NE":    bytecode.Ne,
+	"LT":    bytecode.Lt,
+	"LE":    bytecode.Le,
+	"GT":    bytecode.Gt,
+	"GE":    bytecode.Ge,
+	"INPUT": bytecode.Input,
+	"PRINT": bytecode.Print,
+}
+
+var registers = map[string]uint16{
+	"IP": bytecode.InstructionPointer,
+	"SP": bytecode.StackPointer,
+	"FP": bytecode.FramePointer,
+}
+
+type instruction struct {
+	offset    int16
+	opcode    byte
+	immediate int32
+	indirect  uint16
+}
+
+func (i *instruction) size() int16 {
+	var value int16 = 1
+	if (i.opcode & 0xC0) == bytecode.Immediate {
+		value += 4
+	} else if (i.opcode & 0xC0) == bytecode.Indirect {
+		value += 2
+	}
+	return value
 }
 
 type parser struct {
 	source    *bufio.Reader
 	lookahead lexeme
+	line      int
+
+	instructions []*instruction
+	currentInstr int
+	labels       map[string]int16
+	unresolved   map[*instruction]string
 }
 
 const (
@@ -43,78 +112,162 @@ func (l *lexeme) is(exp int) bool {
 func (p *parser) parse() {
 	p.lookahead = p.scanOne()
 
-	if p.lookahead.is(xNewLine) {
+	if p.has(xNewLine) {
 		p.parseNewLines()
 	}
-	for !p.lookahead.is(xEos) {
+	for !p.has(xEos) {
 		p.parseLine()
 	}
 }
 
 func (p *parser) parseNewLines() {
-	for p.lookahead.is(xNewLine) {
+	for p.has(xNewLine) {
 		p.lookahead = p.scanOne()
 	}
 }
 
-// Line = [Ident ':'] [OPERATION [Argument]].
-// Argument = Number | '[' Register ('+'|'-') Number ']'.
-// Register = IP | SP | FP.
 func (p *parser) parseLine() error {
-	label, err := p.parseLabel()
-	if err != nil {
-		return err
-	}
-	if len(label) != 0 {
-		// store label address in table
+	if p.has(xIdent) {
+		err := p.parseLabel()
+		if err != nil {
+			return err
+		}
 	}
 
-	if !p.lookahead.is(xOperation) {
-		return nil
+	if p.has(xOperation) {
+		err := p.parseOperation()
+		if err != nil {
+			return err
+		}
 	}
+
+	if !p.has(xNewLine) {
+		return fmt.Errorf("Տողի վերջում սպասվում է նոր տողի նշան")
+	}
+	p.parseNewLines()
 
 	return nil
 }
 
 func (p *parser) parseOperation() error {
-	if !p.lookahead.is(xOperation) {
+	opName, _ := p.match(xOperation)
+	opcode, exists := operations[opName]
+	if !exists {
+		return fmt.Errorf("Անծանոթ հրահանգ `%s`", opName)
+	}
+
+	// երբ արգումենտը թվային հաստատուն է
+	if p.has(xNumber) {
+		nlex, _ := p.match(xNumber)
+		number, _ := strconv.ParseInt(nlex, 10, 32)
+		instr := &instruction{
+			offset:    0,
+			opcode:    opcode | bytecode.Immediate,
+			immediate: int32(number),
+			indirect:  0,
+		}
+		p.appendInstruction(instr)
 		return nil
 	}
 
-	oper, _ := p.match(xOperation)
-
-	switch p.lookahead.token {
-	case xNumber:
-		p.lookahead = p.scanOne()
-	case xLeftBr:
-		p.lookahead = p.scanOne()
-		if !p.lookahead.is(xRegister) {
-			// error
+	// երբ արգումենտը անուղղակի հասցեավորում է
+	if p.has(xLeftBr) {
+		_, _ = p.match(xLeftBr)
+		regName, err := p.match(xRegister)
+		if err != nil {
+			return err
 		}
-		p.lookahead = p.scanOne()
-	case xNewLine:
-	}
-	_ = oper
+		reg := registers[regName]
+		var disp int64 = 1
+		if p.has(xPlus) {
+			p.match(xPlus)
+		} else if p.has(xMinus) {
+			p.match(xMinus)
+			disp = -1
+		} else {
+			return fmt.Errorf("Սպասվում է '+' կամ '-' նշանը")
+		}
+		nlex, err := p.match(xNumber)
+		if err != nil {
+			return err
+		}
+		number, _ := strconv.ParseInt(nlex, 10, 16)
+		_, err = p.match(xRightBr)
+		if err != nil {
+			return err
+		}
+		number *= disp
 
+		instr := &instruction{
+			offset:    0,
+			opcode:    opcode | bytecode.Indirect,
+			immediate: 0,
+			indirect:  reg | uint16(number),
+		}
+		p.appendInstruction(instr)
+		return nil
+	}
+
+	// երբ արգումենտը պիտակ է (իդենտիֆիկատոր)
+	if p.has(xIdent) {
+		instr := &instruction{
+			offset:    0,
+			opcode:    opcode | bytecode.Indirect,
+			immediate: 0,
+			indirect:  0,
+		}
+		label, _ := p.match(xIdent)
+		if addr, exists := p.labels[label]; exists {
+			instr.indirect = uint16(addr)
+		} else {
+			p.unresolved[instr] = label
+		}
+		p.appendInstruction(instr)
+		return nil
+	}
+
+	instr := &instruction{
+		offset:    0,
+		opcode:    opcode | bytecode.Basic,
+		immediate: 0,
+		indirect:  0,
+	}
+	p.appendInstruction(instr)
 	return nil
 }
 
-func (p *parser) parseLabel() (string, error) {
-	if !p.lookahead.is(xIdent) {
-		return "", nil
+func (p *parser) appendInstruction(elem *instruction) {
+	p.instructions[p.currentInstr] = elem
+	previous := p.currentInstr - 1
+	if previous != -1 {
+		p.instructions[p.currentInstr].offset = p.instructions[previous].offset + elem.size()
 	}
+	p.currentInstr++
+}
 
+func (p *parser) parseLabel() error {
 	name, err := p.match(xIdent)
 	if err != nil {
-		return "", err
+		return err
 	}
 	_, err = p.match(xColon)
 
-	return name, nil
+	p.addLabel(name)
+	return nil
+}
+
+func (p *parser) addLabel(name string) {
+	if _, exists := p.labels[name]; exists {
+		return
+	}
+
+	lastInstr := p.instructions[p.currentInstr-1]
+	offset := lastInstr.offset + lastInstr.size()
+	p.labels[name] = offset
 }
 
 func (p *parser) match(expected int) (string, error) {
-	if p.lookahead.token == expected {
+	if p.has(expected) {
 		text := p.lookahead.value
 		p.lookahead = p.scanOne()
 		return text, nil
@@ -123,12 +276,10 @@ func (p *parser) match(expected int) (string, error) {
 	return "", fmt.Errorf("Expected %d but got %d", expected, p.lookahead.token)
 }
 
-var operations = []string{
-	"NOP", "PUSH", "POP", "CALL", "RETURN", "JUMP", "JZ", "HALT",
-	"ADD", "SUB", "MUL", "DIV", "MOD", "NEG", "AND", "OR", "NOT",
-	"EQ", "NE", "LT", "LE", "GT", "GE", "INPUT", "PRINT",
+func (p *parser) has(token int) bool {
+	return p.lookahead.is(token)
 }
-var registers = []string{"IP", "SP", "FP"}
+
 var metasymbols = map[rune]int{
 	':':  xColon,
 	'[':  xLeftBr,
@@ -147,7 +298,6 @@ func (p *parser) scanOne() lexeme {
 	}
 
 	// անտեսել բացատները
-	isSpace := func(c rune) bool { return c == ' ' || c == '\t' || c == '\r' }
 	if isSpace(ch) {
 		p.readCharsWhile(isSpace)
 		ch = p.readChar()
@@ -162,15 +312,15 @@ func (p *parser) scanOne() lexeme {
 	// գործողության անուն կամ իդենտիֆիկատոր
 	if unicode.IsLetter(ch) {
 		p.source.UnreadRune()
-		text := p.readCharsWhile(func(c rune) bool { return unicode.IsLetter(c) || unicode.IsDigit(c) })
-		switch {
-		case slices.Contains(operations, text):
+		text := p.readCharsWhile(isAlphaNumeric)
+		if _, exists := operations[text]; exists {
 			return lexeme{token: xOperation, value: text}
-		case slices.Contains(registers, text):
-			return lexeme{token: xRegister, value: text}
-		default:
-			return lexeme{token: xIdent, value: text}
 		}
+		if _, exists := registers[text]; exists {
+			return lexeme{token: xRegister, value: text}
+		}
+
+		return lexeme{token: xIdent, value: text}
 	}
 
 	// ամբողջ թիվ
@@ -182,10 +332,21 @@ func (p *parser) scanOne() lexeme {
 
 	// այլ սիմվոլներ
 	if tok, ok := metasymbols[ch]; ok {
+		if tok == xNewLine {
+			p.line++
+		}
 		return lexeme{token: tok, value: string(ch)}
 	}
 
 	return lexeme{token: xUnknown, value: string(ch)}
+}
+
+func isAlphaNumeric(c rune) bool {
+	return unicode.IsLetter(c) || unicode.IsDigit(c)
+}
+
+func isSpace(c rune) bool {
+	return c == ' ' || c == '\t' || c == '\r'
 }
 
 func (p *parser) readCharsWhile(pred func(rune) bool) string {
