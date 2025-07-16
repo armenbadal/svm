@@ -3,24 +3,31 @@ package assembler
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"strconv"
 	"svm/bytecode"
 	"unicode"
 )
 
 func Assemble(file string) ([]byte, error) {
-
-	p := &parser{
-		source:       nil,
-		lookahead:    lexeme{token: xUnknown, value: "?"},
-		line:         1,
-		instructions: make([]*instruction, 0),
-		currentInstr: 0,
-		labels:       make(map[string]int16),
-		unresolved:   make(map[*instruction]string),
+	// բացել ֆայլը
+	input, err := os.Open(file)
+	if err != nil {
+		return nil, err
 	}
-	_ = p
-	return nil, nil
+	defer input.Close()
+
+	// վերլուծել ծրագիրն ու կառուցել բայթկոդը
+	p := &parser{
+		source:    bufio.NewReader(input),
+		lookahead: lexeme{token: xUnknown, value: "?"},
+		line:      1,
+		builder:   bytecode.NewBuilder(),
+	}
+	p.parse()
+	p.builder.Validate() // լուծել անորոշ հղումները
+
+	return p.builder.Bytes(), nil
 }
 
 var operations = map[string]byte{
@@ -57,32 +64,12 @@ var registers = map[string]uint16{
 	"FP": bytecode.FramePointer,
 }
 
-type instruction struct {
-	offset    int16
-	opcode    byte
-	immediate int32
-	indirect  uint16
-}
-
-func (i *instruction) size() int16 {
-	var value int16 = 1
-	if (i.opcode & 0xC0) == bytecode.Immediate {
-		value += 4
-	} else if (i.opcode & 0xC0) == bytecode.Indirect {
-		value += 2
-	}
-	return value
-}
-
 type parser struct {
 	source    *bufio.Reader
 	lookahead lexeme
 	line      int
 
-	instructions []*instruction
-	currentInstr int
-	labels       map[string]int16
-	unresolved   map[*instruction]string
+	builder *bytecode.Builder
 }
 
 const (
@@ -160,13 +147,7 @@ func (p *parser) parseOperation() error {
 	if p.has(xNumber) {
 		nlex, _ := p.match(xNumber)
 		number, _ := strconv.ParseInt(nlex, 10, 32)
-		instr := &instruction{
-			offset:    0,
-			opcode:    opcode | bytecode.Immediate,
-			immediate: int32(number),
-			indirect:  0,
-		}
-		p.appendInstruction(instr)
+		p.builder.AddWithNumeric(opcode, int32(number))
 		return nil
 	}
 
@@ -198,51 +179,19 @@ func (p *parser) parseOperation() error {
 		}
 		number *= disp
 
-		instr := &instruction{
-			offset:    0,
-			opcode:    opcode | bytecode.Indirect,
-			immediate: 0,
-			indirect:  reg | uint16(number),
-		}
-		p.appendInstruction(instr)
+		p.builder.AddWithAddress(opcode, reg, int16(number))
 		return nil
 	}
 
 	// երբ արգումենտը պիտակ է (իդենտիֆիկատոր)
 	if p.has(xIdent) {
-		instr := &instruction{
-			offset:    0,
-			opcode:    opcode | bytecode.Indirect,
-			immediate: 0,
-			indirect:  0,
-		}
 		label, _ := p.match(xIdent)
-		if addr, exists := p.labels[label]; exists {
-			instr.indirect = uint16(addr)
-		} else {
-			p.unresolved[instr] = label
-		}
-		p.appendInstruction(instr)
+		p.builder.AddWithLabel(opcode, label)
 		return nil
 	}
 
-	instr := &instruction{
-		offset:    0,
-		opcode:    opcode | bytecode.Basic,
-		immediate: 0,
-		indirect:  0,
-	}
-	p.appendInstruction(instr)
+	p.builder.AddBasic(opcode)
 	return nil
-}
-
-func (p *parser) appendInstruction(elem *instruction) {
-	p.instructions[p.currentInstr] = elem
-	previous := p.currentInstr - 1
-	if previous != -1 {
-		p.instructions[p.currentInstr].offset = p.instructions[previous].offset + elem.size()
-	}
-	p.currentInstr++
 }
 
 func (p *parser) parseLabel() error {
@@ -252,18 +201,8 @@ func (p *parser) parseLabel() error {
 	}
 	_, err = p.match(xColon)
 
-	p.addLabel(name)
+	p.builder.SetLabel(name)
 	return nil
-}
-
-func (p *parser) addLabel(name string) {
-	if _, exists := p.labels[name]; exists {
-		return
-	}
-
-	lastInstr := p.instructions[p.currentInstr-1]
-	offset := lastInstr.offset + lastInstr.size()
-	p.labels[name] = offset
 }
 
 func (p *parser) match(expected int) (string, error) {

@@ -29,12 +29,16 @@ func TestBasicPushPop(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	program := []byte{
-		bytecode.Push | bytecode.Immediate,
-		0x01, 0x00, 0x00, 0x00,
-		bytecode.Print,
-		bytecode.Halt,
-	}
+	builder := bytecode.NewBuilder()
+	builder.AddWithLabel(bytecode.Call, "print777")
+	builder.AddBasic(bytecode.Halt)
+	builder.SetLabel("print777")
+	builder.AddWithNumeric(bytecode.Push, 777)
+	builder.AddBasic(bytecode.Print)
+	builder.AddBasic(bytecode.Ret)
+	builder.Validate()
+
+	program := builder.Bytes()
 	m := NewMachine()
 	m.Load(program)
 	m.Run()
