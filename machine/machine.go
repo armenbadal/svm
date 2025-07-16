@@ -66,16 +66,35 @@ func (m *Machine) step() bool {
 	case bytecode.Halt:
 		return false
 	case bytecode.Neg:
-		value := m.basicPop()
-		m.basicPush(-value)
+		m.negation()
+	case bytecode.Not:
+		m.not()
 	case bytecode.Add:
-		first := m.basicPop()
-		second := m.basicPop()
-		m.basicPush(first + second)
+		m.binary(func(a, b int32) int32 { return a + b })
 	case bytecode.Sub:
+		m.binary(func(a, b int32) int32 { return a - b })
 	case bytecode.Mul:
+		m.binary(func(a, b int32) int32 { return a * b })
 	case bytecode.Div:
+		m.binary(func(a, b int32) int32 { return a / b })
 	case bytecode.Mod:
+		m.binary(func(a, b int32) int32 { return a % b })
+	case bytecode.And:
+		m.binary(func(a, b int32) int32 { return a & b })
+	case bytecode.Or:
+		m.binary(func(a, b int32) int32 { return a | b })
+	case bytecode.Eq:
+		m.comparison(func(a, b int32) bool { return a == b })
+	case bytecode.Ne:
+		m.comparison(func(a, b int32) bool { return a != b })
+	case bytecode.Lt:
+		m.comparison(func(a, b int32) bool { return a < b })
+	case bytecode.Le:
+		m.comparison(func(a, b int32) bool { return a <= b })
+	case bytecode.Gt:
+		m.comparison(func(a, b int32) bool { return a > b })
+	case bytecode.Ge:
+		m.comparison(func(a, b int32) bool { return a >= b })
 	default:
 		panic("Սխալ (անծանոթ) գործողության կոդ։")
 	}
@@ -171,6 +190,37 @@ func (m *Machine) print() {
 	value := m.basicPop()
 	// ... արտածել այն
 	fmt.Println(value)
+}
+
+// բացասում
+func (m *Machine) negation() {
+	value := m.basicPop()
+	m.basicPush(-value)
+}
+
+// բիթային ժխտում
+func (m *Machine) not() {
+	value := m.basicPop()
+	m.basicPush(^value)
+}
+
+// բինար թվաբանական կամ բիթային գործողություն
+func (m *Machine) binary(op func(int32, int32) int32) {
+	right := m.basicPop()
+	left := m.basicPop()
+	result := op(left, right)
+	m.basicPush(result)
+}
+
+// համեմատման գործողություն
+func (m *Machine) comparison(op func(int32, int32) bool) {
+	right := m.basicPop()
+	left := m.basicPop()
+	var result int32
+	if op(left, right) {
+		result = 1
+	}
+	m.basicPush(result)
 }
 
 // տարրական ստեկային գործողություն push
