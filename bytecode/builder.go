@@ -1,16 +1,17 @@
 package bytecode
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 )
 
 type instruction struct {
-	address   int
-	opcode    byte
-	immediate int32
-	indirect  uint32
+	address   int    // հասցե
+	opcode    byte   // կոդը և տեսակը
+	immediate int32  // թվային արգումենտ
+	indirect  uint16 // անուղղակի հասցե
 }
 
 func (i *instruction) size() int {
@@ -37,64 +38,69 @@ func (i *instruction) bytes() []byte {
 }
 
 func (i instruction) String() string {
-	var s string
-	for e := range i.bytes() {
-		s += fmt.Sprintf("%02x ", e)
+	str := fmt.Sprintf("%04x ", i.address)
+	for _, b := range i.bytes() {
+		str += fmt.Sprintf("%02x ", b)
 	}
-	return s
+	return str
 }
 
 type Builder struct {
-	instructions []*instruction
-	labels       map[string]int
-	count        int
-	offset       int
+	instructions []*instruction // հրամանների ցուցակ
+	count        int            // հրամանների հաշվիչ
+
+	labels     map[string]int          // պիտակներ, ժամանակավոր
+	unresolved map[*instruction]string // ժամանակավորապես անհասցե պիտակներ
+	offset     int                     // ընթացիկ շեղումը 0-ից
 }
 
 func NewBuilder() *Builder {
 	return &Builder{
 		instructions: make([]*instruction, 0),
+		labels:       make(map[string]int),
+		unresolved:   make(map[*instruction]string),
 	}
 }
 
-func (b *Builder) Store(writer io.Writer) {
-	// Temporary
-	for i := 0; i < len(b.instructions); i++ {
-		bs := b.instructions[i].bytes()
-		for j := 0; j < len(bs); j++ {
-			fmt.Fprintf(writer, "%02x", bs[j])
-		}
+func (b *Builder) Bytes() []byte {
+	var buffer bytes.Buffer
+	for _, instr := range b.instructions {
+		buffer.Write(instr.bytes())
 	}
-	fmt.Fprintln(writer)
+	return buffer.Bytes()
 }
 
 func (b *Builder) SetLabel(name string) {
+	if _, exists := b.labels[name]; !exists {
+		b.labels[name] = b.offset
+	}
 }
 
 func (b *Builder) AddBasic(opcode byte) {
-	instr := &instruction{
-		address:   b.offset,
-		opcode:    opcode | Basic,
-		immediate: 0,
-		indirect:  0,
-	}
+	instr := &instruction{}
+	instr.opcode = opcode | Basic
 	b.addInstruction(instr)
 }
 
 func (b *Builder) AddWithNumeric(opcode byte, number int32) {
-	instr := &instruction{
-		address:   b.offset,
-		opcode:    opcode | Immediate,
-		immediate: number,
-		indirect:  0,
-	}
+	instr := &instruction{}
+	instr.opcode = opcode | Immediate
+	instr.immediate = number
 	b.addInstruction(instr)
 }
 
 func (b *Builder) AddWithAddress(opcode byte, register uint16, displacement int16) {
+	instr := &instruction{}
+	instr.opcode = opcode | Indirect
+	instr.indirect = register | uint16(displacement)
+	b.addInstruction(instr)
 }
 
 func (b *Builder) AddWithLabel(opcode byte, label string) {
+	instr := &instruction{}
+	instr.opcode = opcode | Indirect
+	b.unresolved[instr] = label
+	b.addInstruction(instr)
 }
 
 func (b *Builder) addInstruction(instr *instruction) {
@@ -102,6 +108,14 @@ func (b *Builder) addInstruction(instr *instruction) {
 	b.offset += instr.size()
 	b.instructions = append(b.instructions, instr)
 	b.count++
+}
+
+func (b *Builder) Validate() bool {
+	// լրացնել անորոշ հղումները
+	for instr, label := range b.unresolved {
+		instr.indirect = uint16(b.labels[label])
+	}
+	return true
 }
 
 // func (b *Builder) PushI(number int32) {}
@@ -129,3 +143,9 @@ func (b *Builder) addInstruction(instr *instruction) {
 // func (b *Builder) Le()                {}
 // func (b *Builder) Gt()                {}
 // func (b *Builder) Ge()                {}
+
+func (b *Builder) Dump(writer io.Writer) {
+	for _, instr := range b.instructions {
+		fmt.Fprintln(writer, instr.String())
+	}
+}
