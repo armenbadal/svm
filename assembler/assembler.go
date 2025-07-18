@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"svm/bytecode"
 	"unicode"
@@ -13,7 +14,7 @@ func Assemble(file string) ([]byte, error) {
 	// բացել ֆայլը
 	input, err := os.Open(file)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Չհաջողվեց բացել ծրագրի տեքստի ֆայլը։")
 	}
 	defer input.Close()
 
@@ -24,7 +25,11 @@ func Assemble(file string) ([]byte, error) {
 		line:      1,
 		builder:   bytecode.NewBuilder(),
 	}
-	p.parse()
+	err = p.parse()
+	if err != nil {
+		return nil, err
+	}
+
 	p.builder.Validate() // լուծել անորոշ հղումները
 
 	return p.builder.Bytes(), nil
@@ -116,23 +121,40 @@ type lexeme struct {
 	value string
 }
 
-func (p *parser) parse() {
+func (p *parser) parse() error {
 	p.lookahead = p.scanOne()
 
-	if p.has(xNewLine) {
-		p.parseNewLines()
-	}
+	p.parseNewLines(optional)
+
 	for !p.has(xEos) {
-		p.parseLine()
+		err := p.parseLine()
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
-func (p *parser) parseNewLines() {
+const (
+	mandatory = true
+	optional  = false
+)
+
+// մեկ կամ ավելի նոր տողին նիշեր
+func (p *parser) parseNewLines(first bool) error {
+	if first == mandatory && !p.has(xNewLine) {
+		return fmt.Errorf("Այստեղ սպասվում է նոր տողի անցման նիշ։")
+	}
+
 	for p.has(xNewLine) {
 		p.lookahead = p.scanOne()
 	}
+
+	return nil
 }
 
+// տեքստի մեկ տողի վերլուծությունը
 func (p *parser) parseLine() error {
 	if p.has(xIdent) {
 		err := p.parseLabel()
@@ -148,14 +170,10 @@ func (p *parser) parseLine() error {
 		}
 	}
 
-	if !p.has(xNewLine) {
-		return fmt.Errorf("Տողի վերջում սպասվում է նոր տողի նշան")
-	}
-	p.parseNewLines()
-
-	return nil
+	return p.parseNewLines(mandatory)
 }
 
+// գործողության ընդհանուր վերլուծություն
 func (p *parser) parseOperation() error {
 	if !p.has(xOperation) {
 		return fmt.Errorf("Սպասվում է հրահանգ, բայց ստացվել է %s", p.lookahead.kind)
@@ -168,9 +186,10 @@ func (p *parser) parseOperation() error {
 		return p.parsePop()
 	case "CALL", "JUMP", "JZ":
 		return p.parseJump()
-	case "HALT", "RET", "ADD", "SUB", "MUL", "DIV", "MOD", "NEG",
-		"AND", "OR", "NOT", "EQ", "NE", "LT", "LE", "GT", "GE",
-		"INPUT", "PRINT":
+	case "HALT", "RET", "ADD", "SUB", "MUL",
+		"DIV", "MOD", "NEG", "AND", "OR",
+		"NOT", "EQ", "NE", "LT", "LE",
+		"GT", "GE", "INPUT", "PRINT":
 		return p.parseSimple()
 	}
 
@@ -188,7 +207,7 @@ func (p *parser) parsePush() error {
 		return fmt.Errorf("Սպասվում է PUSH հրահանգը, բայց ստացվել է %s", name)
 	}
 
-	if p.has(xNumber) {
+	if p.has(xNumber, xPlus, xMinus) {
 		number, err := p.parseNumber()
 		if err != nil {
 			return err
@@ -205,6 +224,7 @@ func (p *parser) parsePush() error {
 	return nil
 }
 
+// POP-ը հանդիպում է միայն անուղակի հասցեավորմամբ, օրինակ POP [FP-3]
 func (p *parser) parsePop() error {
 	name, err := p.match(xOperation)
 	if err != nil {
@@ -220,11 +240,14 @@ func (p *parser) parsePop() error {
 			return err
 		}
 		p.builder.AddWithAddress(bytecode.Pop, register, displacement)
+		return nil
 	}
 
 	return fmt.Errorf("POP հրահանգը սպասում է անուղղակի հասցեավորում")
 }
 
+// վերլուծվում են անցում կատարող բոլոր գործողությունները.
+// CALL, JUMP, JZ; Դրանց բոլորի արգումենտը պիտակ է
 func (p *parser) parseJump() error {
 	name, err := p.match(xOperation)
 	if err != nil {
@@ -243,6 +266,7 @@ func (p *parser) parseJump() error {
 	return nil
 }
 
+// արգումենտներ չունեցող գործողություններ
 func (p *parser) parseSimple() error {
 	name, err := p.match(xOperation)
 	if err != nil {
@@ -252,15 +276,25 @@ func (p *parser) parseSimple() error {
 	return nil
 }
 
+// ամբողջ թիվ
 func (p *parser) parseNumber() (int32, error) {
+	var sign int32 = 1
+	if p.has(xPlus) {
+		p.match(xPlus)
+	} else if p.has(xMinus) {
+		p.match(xMinus)
+		sign = -1
+	}
+
 	nlex, err := p.match(xNumber)
 	if err != nil {
 		return 0, err
 	}
 	number, _ := strconv.ParseInt(nlex, 10, 32)
-	return int32(number), nil
+	return sign * int32(number), nil
 }
 
+// անուղղակի հասցեավորում. '[' REGISTER ('+'|'-') NUMBER ']'
 func (p *parser) parseIndirect() (uint16, int16, error) {
 	_, err := p.match(xLeftBr)
 	if err != nil {
@@ -283,11 +317,11 @@ func (p *parser) parseIndirect() (uint16, int16, error) {
 		return 0, 0, fmt.Errorf("Սպասվում է '+' կամ '-' նշանը")
 	}
 
-	nlex, err := p.match(xNumber)
+	numStr, err := p.match(xNumber)
 	if err != nil {
 		return 0, 0, err
 	}
-	number, _ := strconv.ParseInt(nlex, 10, 16)
+	number, _ := strconv.ParseInt(numStr, 10, 16)
 	displacement *= int16(number)
 
 	_, err = p.match(xRightBr)
@@ -298,6 +332,7 @@ func (p *parser) parseIndirect() (uint16, int16, error) {
 	return register, displacement, nil
 }
 
+// պիտակ. IDENT ':'
 func (p *parser) parseLabel() error {
 	name, err := p.match(xIdent)
 	if err != nil {
@@ -319,8 +354,12 @@ func (p *parser) match(expected token) (string, error) {
 	return "", fmt.Errorf("Սպասվում է %s բայց ստացվել է %s", expected, p.lookahead.kind)
 }
 
-func (p *parser) has(tk token) bool {
-	return p.lookahead.kind == tk
+func (p *parser) has(tokens ...token) bool {
+	return slices.Contains(tokens, p.lookahead.kind)
+}
+
+func (p *parser) hasValue(values ...string) bool {
+	return slices.Contains(values, p.lookahead.value)
 }
 
 var metasymbols = map[rune]token{
@@ -332,6 +371,7 @@ var metasymbols = map[rune]token{
 	'\n': xNewLine,
 }
 
+// բառային վերլուծիչ
 func (p *parser) scanOne() lexeme {
 	ch := p.readChar()
 

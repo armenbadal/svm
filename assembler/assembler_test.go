@@ -80,9 +80,12 @@ func TestScanOne(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	example0 := `
+
+
 	; example 0
 	  CALL main
 	  HALT
+	
 	main:
 	  PUSH 0 ; local
 	  PUSH 345
@@ -90,6 +93,7 @@ func TestParse(t *testing.T) {
 	  PUSH [FP + 1]
 	  PRINT
       RET
+	
 	`
 
 	p := &parser{
@@ -99,4 +103,13 @@ func TestParse(t *testing.T) {
 	p.parse()
 	p.builder.Validate()
 	p.builder.Dump(os.Stdout)
+
+	// 0000 83 04 00
+	// 0003 07
+	// 0004 41 00 00 00 00
+	// 0009 41 59 01 00 00
+	// 000e 82 01 80
+	// 0011 81 01 80
+	// 0014 09
+	// 0015 04
 }
