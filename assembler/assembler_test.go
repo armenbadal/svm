@@ -2,7 +2,9 @@ package assembler
 
 import (
 	"bufio"
+	"os"
 	"strings"
+	"svm/bytecode"
 	"testing"
 	"unicode"
 )
@@ -53,25 +55,48 @@ func TestScanOne(t *testing.T) {
 	}
 
 	expected0 := []lexeme{
-		{token: xOperation, value: "PUSH"},
-		{token: xLeftBr, value: "["},
-		{token: xRegister, value: "FP"},
-		{token: xMinus, value: "-"},
-		{token: xNumber, value: "12"},
-		{token: xRightBr, value: "]"},
-		{token: xNewLine, value: "\n"},
-		{token: xEos, value: "EOS"},
+		{kind: xOperation, value: "PUSH"},
+		{kind: xLeftBr, value: "["},
+		{kind: xRegister, value: "FP"},
+		{kind: xMinus, value: "-"},
+		{kind: xNumber, value: "12"},
+		{kind: xRightBr, value: "]"},
+		{kind: xNewLine, value: "\n"},
+		{kind: xEos, value: "EOS"},
 	}
 
 	i := 0
 	for {
 		lex := p.scanOne()
-		if !(lex.token == expected0[i].token && lex.value == expected0[i].value) {
+		if !(lex.kind == expected0[i].kind && lex.value == expected0[i].value) {
 			t.Errorf("Expected %v, got %v", expected0[i], lex)
 		}
-		if lex.token == xEos {
+		if lex.kind == xEos {
 			break
 		}
 		i += 1
 	}
+}
+
+func TestParse(t *testing.T) {
+	example0 := `
+	; example 0
+	  CALL main
+	  HALT
+	main:
+	  PUSH 0 ; local
+	  PUSH 345
+	  POP [FP + 1]
+	  PUSH [FP + 1]
+	  PRINT
+      RET
+	`
+
+	p := &parser{
+		source:  bufio.NewReader(strings.NewReader(example0)),
+		builder: bytecode.NewBuilder(),
+	}
+	p.parse()
+	p.builder.Validate()
+	p.builder.Dump(os.Stdout)
 }

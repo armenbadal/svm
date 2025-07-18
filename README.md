@@ -38,11 +38,33 @@ type Machine struct {
 Program   = { Line }.
 Line      = [Label] [Operation] NewLines.
 Label     = IDENT ':'.
-Operation = IDENT [Argument].
+Operation = 'PUSH' (NUMBER | Indirect)
+          | 'POP' Indirect
+          | 'CALL' IDENT
+          | 'JUMP' IDENT
+          | 'JZ' IDENT
+          | 'RET'
+          | 'HALT'
+          | 'INPUT'
+          | 'PRINT'
+          | 'ADD'
+          | 'SUB'
+          | 'MUL'
+          | 'DIV'
+          | 'MOD'
+          | 'NEG'
+          | 'AND'
+          | 'OR'
+          | 'NOT'
+          | 'EQ'
+          | 'NE'
+          | 'LT'
+          | 'LE'
+          | 'GT'
+          | 'GE'
+          .
 NewLines  = '\n' { '\n' }.
-Argument  = NUMBER
-          | IDENT
-          | '[' Register ('+'|'-') NUMBER ']'.
+Indirect  = '[' Register ('+'|'-') NUMBER ']'.
 Register  = 'IP' | 'SP' | 'FP'.
 ```
 
