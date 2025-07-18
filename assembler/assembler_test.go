@@ -2,7 +2,7 @@ package assembler
 
 import (
 	"bufio"
-	"os"
+	"bytes"
 	"strings"
 	"svm/bytecode"
 	"testing"
@@ -102,14 +102,20 @@ func TestParse(t *testing.T) {
 	}
 	p.parse()
 	p.builder.Validate()
-	p.builder.Dump(os.Stdout)
 
-	// 0000 83 04 00
-	// 0003 07
-	// 0004 41 00 00 00 00
-	// 0009 41 59 01 00 00
-	// 000e 82 01 80
-	// 0011 81 01 80
-	// 0014 09
-	// 0015 04
+	buffer := bytes.NewBufferString("")
+	p.builder.Dump(buffer)
+	generated := buffer.String()
+
+	expected := "0000 83 04 00\n" +
+		"0003 07\n" +
+		"0004 41 00 00 00 00\n" +
+		"0009 41 59 01 00 00\n" +
+		"000e 82 01 80\n" +
+		"0011 81 01 80\n" +
+		"0014 09\n" +
+		"0015 04\n"
+	if expected != generated {
+		t.Errorf("Ստացված բայթկոդը չի հմապատասխանում սպասվածին։\n|%s|\n\n|%s|", expected, generated)
+	}
 }

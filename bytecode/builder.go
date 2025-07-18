@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type instruction struct {
@@ -38,11 +39,11 @@ func (i *instruction) bytes() []byte {
 }
 
 func (i instruction) String() string {
-	str := fmt.Sprintf("%04x ", i.address)
+	strs := []string{fmt.Sprintf("%04x", i.address)}
 	for _, b := range i.bytes() {
-		str += fmt.Sprintf("%02x ", b)
+		strs = append(strs, fmt.Sprintf("%02x", b))
 	}
-	return str
+	return strings.Join(strs, " ")
 }
 
 type Builder struct {
