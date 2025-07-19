@@ -40,7 +40,8 @@ type Machine struct {
 Program   = { Line }.
 Line      = [Label] [Operation] NewLines.
 Label     = IDENT ':'.
-Operation = 'PUSH' (NUMBER | Indirect)
+Operation = 'NOP'
+          | 'PUSH' (NUMBER | Indirect)
           | 'POP' Indirect
           | 'CALL' IDENT
           | 'JUMP' IDENT
@@ -89,8 +90,10 @@ max:
   GT
   JZ second
   PUSH [FP - 0]
+  JUMP endf
 second:
   PUSH [FP - 1]
+endf:
   RET
 ```
 

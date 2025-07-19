@@ -18,7 +18,7 @@ func execute(input string) {
 
 	bytes, err := assembler.Assemble(input)
 	if err != nil {
-		fmt.Printf("ՍԽԱԼ։ %s", err.Error())
+		fmt.Println(err.Error())
 		return
 	}
 
@@ -29,7 +29,7 @@ func execute(input string) {
 
 func main() {
 	if len(os.Args) == 1 {
-		fmt.Println("Ստեկային վիրտուալ մեքենա, v. 0.0.1")
+		fmt.Println("Ստեկային վիրտուալ մեքենա, v0.0.1")
 		return
 	}
 

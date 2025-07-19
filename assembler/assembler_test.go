@@ -48,11 +48,15 @@ func TestReadCharsWhile(t *testing.T) {
 	}
 }
 
-func TestScanOne(t *testing.T) {
-	example0 := "PUSH [FP - 12]\n"
-	p := &parser{
-		source: bufio.NewReader(strings.NewReader(example0)),
+func createParserFor(example string) *parser {
+	return &parser{
+		source:  bufio.NewReader(strings.NewReader(example)),
+		builder: bytecode.NewBuilder(),
 	}
+}
+
+func TestScanOne(t *testing.T) {
+	p := createParserFor("PUSH [FP - 12]\n")
 
 	expected0 := []lexeme{
 		{kind: xOperation, value: "PUSH"},
@@ -96,10 +100,7 @@ func TestParse(t *testing.T) {
 	
 	`
 
-	p := &parser{
-		source:  bufio.NewReader(strings.NewReader(example0)),
-		builder: bytecode.NewBuilder(),
-	}
+	p := createParserFor(example0)
 	p.parse()
 	p.builder.Validate()
 
@@ -117,5 +118,23 @@ func TestParse(t *testing.T) {
 		"0015 04\n"
 	if expected != generated {
 		t.Errorf("Ստացված բայթկոդը չի հմապատասխանում սպասվածին։\n|%s|\n\n|%s|", expected, generated)
+	}
+}
+
+func TestErrorHandling(t *testing.T) {
+	example0 := `
+		; syntax error
+		777
+		HALT
+	`
+	p := createParserFor(example0)
+	err := p.parse()
+	if err == nil {
+		t.Errorf("Սպասվում է վերլուծության սխալ")
+	}
+
+	expected0 := "ՍԽԱԼ [2]: Տողը սկսվում է NUM<777> սիմվոլով"
+	if expected0 != err.Error() {
+		t.Errorf("Սպասվում է \"%s\" հաղորդագրությունը", expected0)
 	}
 }

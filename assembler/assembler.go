@@ -100,12 +100,12 @@ var tokenNames = map[token]string{
 	xOperation: "Operation",
 	xRegister:  "Register",
 	xNumber:    "Number",
-	xNewLine:   "NewLine",
-	xColon:     "Colon",
-	xLeftBr:    "LeftBracket",
-	xRightBr:   "RightBracket",
-	xPlus:      "Plus",
-	xMinus:     "Minus",
+	xNewLine:   "\\n",
+	xColon:     ":",
+	xLeftBr:    "[",
+	xRightBr:   "]",
+	xPlus:      "+",
+	xMinus:     "-",
 	xEos:       "Eos",
 }
 
@@ -121,10 +121,26 @@ type lexeme struct {
 	value string
 }
 
+func (l lexeme) String() string {
+	if l.kind == xIdent {
+		return fmt.Sprintf("IDENT<%s>", l.value)
+	}
+	if l.kind == xOperation {
+		return fmt.Sprintf("OP<%s>", l.value)
+	}
+	if l.kind == xRegister {
+		return fmt.Sprintf("REG<%s>", l.value)
+	}
+	if l.kind == xNumber {
+		return fmt.Sprintf("NUM<%s>", l.value)
+	}
+	return tokenNames[l.kind]
+}
+
 func (p *parser) parse() error {
 	p.lookahead = p.scanOne()
 
-	p.parseNewLines(optional)
+	p.parseNewLines()
 
 	for !p.has(xEos) {
 		err := p.parseLine()
@@ -136,22 +152,11 @@ func (p *parser) parse() error {
 	return nil
 }
 
-const (
-	mandatory = true
-	optional  = false
-)
-
 // մեկ կամ ավելի նոր տողին նիշեր
-func (p *parser) parseNewLines(first bool) error {
-	if first == mandatory && !p.has(xNewLine) {
-		return fmt.Errorf("Այստեղ սպասվում է նոր տողի անցման նիշ։")
-	}
-
+func (p *parser) parseNewLines() {
 	for p.has(xNewLine) {
 		p.lookahead = p.scanOne()
 	}
-
-	return nil
 }
 
 // տեքստի մեկ տողի վերլուծությունը
@@ -170,13 +175,18 @@ func (p *parser) parseLine() error {
 		}
 	}
 
-	return p.parseNewLines(mandatory)
+	if p.has(xNewLine) {
+		p.parseNewLines()
+		return nil
+	}
+
+	return p.report("Տողը սկսվում է %s սիմվոլով", p.lookahead)
 }
 
 // գործողության ընդհանուր վերլուծություն
 func (p *parser) parseOperation() error {
 	if !p.has(xOperation) {
-		return fmt.Errorf("Սպասվում է հրահանգ, բայց ստացվել է %s", p.lookahead.kind)
+		return p.report("Սպասվում է հրահանգ, բայց ստացվել է %s", p.lookahead)
 	}
 
 	switch p.lookahead.value {
@@ -204,7 +214,7 @@ func (p *parser) parsePush() error {
 		return err
 	}
 	if name != "PUSH" {
-		return fmt.Errorf("Սպասվում է PUSH հրահանգը, բայց ստացվել է %s", name)
+		return p.report("Սպասվում է PUSH հրահանգը, բայց ստացվել է %s", name)
 	}
 
 	if p.has(xNumber, xPlus, xMinus) {
@@ -231,7 +241,7 @@ func (p *parser) parsePop() error {
 		return err
 	}
 	if name != "POP" {
-		return fmt.Errorf("Սպասվում է POP հրահանգը, բայց ստացվել է %s", name)
+		return p.report("Սպասվում է POP հրահանգը, բայց ստացվել է %s", name)
 	}
 
 	if p.has(xLeftBr) {
@@ -243,7 +253,7 @@ func (p *parser) parsePop() error {
 		return nil
 	}
 
-	return fmt.Errorf("POP հրահանգը սպասում է անուղղակի հասցեավորում")
+	return p.report("POP հրահանգը սպասում է անուղղակի հասցեավորում")
 }
 
 // վերլուծվում են անցում կատարող բոլոր գործողությունները.
@@ -254,7 +264,7 @@ func (p *parser) parseJump() error {
 		return err
 	}
 	if name != "CALL" && name != "JUMP" && name != "JZ" {
-		return fmt.Errorf("Սպասվում է CALL, JUMP կամ JZ, բայց ստացվել է %s", name)
+		return p.report("Սպասվում է CALL, JUMP կամ JZ, բայց ստացվել է %s", name)
 	}
 
 	label, err := p.match(xIdent)
@@ -314,7 +324,7 @@ func (p *parser) parseIndirect() (uint16, int16, error) {
 		p.match(xMinus)
 		displacement = -1
 	} else {
-		return 0, 0, fmt.Errorf("Սպասվում է '+' կամ '-' նշանը")
+		return 0, 0, p.report("Սպասվում է '+' կամ '-' նշանը")
 	}
 
 	numStr, err := p.match(xNumber)
@@ -339,6 +349,9 @@ func (p *parser) parseLabel() error {
 		return err
 	}
 	_, err = p.match(xColon)
+	if err != nil {
+		return p.report("'%s' պիտակին պետք է հետևի ':'", name)
+	}
 
 	p.builder.SetLabel(name)
 	return nil
@@ -351,7 +364,7 @@ func (p *parser) match(expected token) (string, error) {
 		return text, nil
 	}
 
-	return "", fmt.Errorf("Սպասվում է %s բայց ստացվել է %s", expected, p.lookahead.kind)
+	return "", p.report("Սպասվում է %s բայց ստացվել է %s", expected, p.lookahead)
 }
 
 func (p *parser) has(tokens ...token) bool {
@@ -449,4 +462,8 @@ func (p *parser) readChar() rune {
 		return 0
 	}
 	return ch
+}
+
+func (p *parser) report(format string, args ...any) error {
+	return fmt.Errorf("ՍԽԱԼ [%d]: %s", p.line, fmt.Sprintf(format, args...))
 }
