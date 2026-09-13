@@ -23,7 +23,10 @@ func execute(input string) {
 	}
 
 	vm := machine.NewMachine()
-	vm.Load(bytes)
+	if err := vm.Load(bytes); err != nil {
+		fmt.Println(err.Error())
+		return
+	}
 	vm.Run()
 }
 

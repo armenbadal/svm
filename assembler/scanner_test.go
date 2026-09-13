@@ -49,6 +49,7 @@ func TestReadCharsWhile(t *testing.T) {
 func TestScanOne(t *testing.T) {
 	s := &scanner{
 		source: bufio.NewReader(strings.NewReader("PUSH [FP - 12]\n")),
+		line:   1,
 	}
 
 	expected0 := []lexeme{
@@ -72,5 +73,31 @@ func TestScanOne(t *testing.T) {
 			break
 		}
 		i += 1
+	}
+}
+
+func TestScanOneTracksTokenLines(t *testing.T) {
+	s := &scanner{
+		source: bufio.NewReader(strings.NewReader("NOP\n; comment\nPUSH 1")),
+		line:   1,
+	}
+
+	expected := []struct {
+		kind token
+		line int
+	}{
+		{kind: xOperation, line: 1},
+		{kind: xNewLine, line: 1},
+		{kind: xNewLine, line: 2},
+		{kind: xOperation, line: 3},
+		{kind: xNumber, line: 3},
+		{kind: xEos, line: 3},
+	}
+
+	for i, want := range expected {
+		got := s.scanOne()
+		if got.kind != want.kind || got.line != want.line {
+			t.Fatalf("%d-րդ լեքսեմի համար սպասվում էր %v՝ %d տողում, ստացվել է %v՝ %d տողում", i, want.kind, want.line, got.kind, got.line)
+		}
 	}
 }
