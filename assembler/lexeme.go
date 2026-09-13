@@ -44,6 +44,7 @@ func (t token) String() string {
 type lexeme struct {
 	kind  token
 	value string
+	line  int
 }
 
 func (l lexeme) String() string {
@@ -58,6 +59,9 @@ func (l lexeme) String() string {
 	}
 	if l.kind == xNumber {
 		return fmt.Sprintf("NUM<%s>", l.value)
+	}
+	if l.kind == xUnknown {
+		return fmt.Sprintf("UNKNOWN<%s>", l.value)
 	}
 	return tokenNames[l.kind]
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"svm/bytecode"
 )
 
 func Assemble(file string) ([]byte, error) {
@@ -16,19 +15,15 @@ func Assemble(file string) ([]byte, error) {
 	defer input.Close()
 
 	// վերլուծել ծրագիրն ու կառուցել բայթկոդը
-	p := &parser{
-		sc: &scanner{
-			source: bufio.NewReader(input),
-			line:   1,
-		},
-		builder: bytecode.NewBuilder(),
-	}
+	p := createParser(bufio.NewReader(input))
 	err = p.parse()
 	if err != nil {
 		return nil, err
 	}
 
-	p.builder.Validate() // լուծել անորոշ հղումները
+	if err := p.builder.Validate(); err != nil { // լուծել անորոշ հղումները
+		return nil, err
+	}
 
 	return p.builder.Bytes(), nil
 }

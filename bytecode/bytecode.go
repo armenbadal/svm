@@ -1,7 +1,11 @@
 package bytecode
 
+import "fmt"
+
+type Operation byte
+
 const (
-	Nop byte = iota
+	Nop Operation = iota
 	Push
 	Pop
 	Call
@@ -28,80 +32,39 @@ const (
 	Ge
 )
 
-var Codes = []byte{
-	Nop,
-	Push,
-	Pop,
-	Call,
-	Ret,
-	Jump,
-	Jz,
-	Halt,
-	Input,
-	Print,
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Mod,
-	Neg,
-	And,
-	Or,
-	Not,
-	Eq,
-	Ne,
-	Lt,
-	Le,
-	Gt,
-	Ge,
-}
-
-var Mnemonics = map[byte]string{
-	Nop:   "NOP",
-	Push:  "PUSH",
-	Pop:   "POP",
-	Call:  "CALL",
-	Ret:   "RET",
-	Jump:  "JUMP",
-	Jz:    "JZ",
-	Halt:  "HALT",
-	Add:   "ADD",
-	Sub:   "SUB",
-	Mul:   "MUL",
-	Div:   "DIV",
-	Mod:   "MOD",
-	Neg:   "NEG",
-	And:   "AND",
-	Or:    "OR",
-	Not:   "NOT",
-	Eq:    "EQ",
-	Ne:    "NE",
-	Lt:    "LT",
-	Le:    "LE",
-	Gt:    "GT",
-	Ge:    "GE",
-	Input: "INPUT",
-	Print: "PRINT",
-}
-
 const (
 	Basic     byte = 0x00
 	Immediate byte = 0x40
 	Indirect  byte = 0x80
 )
 
+type RelativeAddress uint16
+
+type Register uint16
+
 const (
-	StackPointer       uint16 = 0x4000
-	FramePointer       uint16 = 0x8000
-	InstructionPointer uint16 = 0xC000
+	StackPointer       Register = 0x4000
+	FramePointer       Register = 0x8000
+	InstructionPointer Register = 0xC000
 )
 
-type Operation = byte
-type Integer = int32
-type RelativeAddress = uint16
+const displacementMask uint16 = 0x3FFF
 
-type Instruction struct {
-	opcode    Operation
-	immediate Integer
-	indirect  RelativeAddress
+func EncodeRelativeAddress(register Register, displacement int16) (RelativeAddress, error) {
+	if register != StackPointer && register != FramePointer && register != InstructionPointer {
+		return 0, fmt.Errorf("անվավեր ռեգիստր՝ 0x%04x", uint16(register))
+	}
+	if displacement < -8192 || displacement > 8191 {
+		return 0, fmt.Errorf("շեղումը պետք է լինի [-8192, 8191] միջակայքում՝ %d", displacement)
+	}
+
+	encoded := uint16(register) | (uint16(displacement) & displacementMask)
+	return RelativeAddress(encoded), nil
+}
+
+func DecodeRelativeAddress(address RelativeAddress) (Register, int16) {
+	encoded := uint16(address)
+	register := Register(encoded &^ displacementMask)
+	displacement := int16(encoded<<2) >> 2
+	return register, displacement
 }

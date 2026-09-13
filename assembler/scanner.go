@@ -37,28 +37,29 @@ func (s *scanner) scanOne() lexeme {
 
 	// հոսքի վերջը
 	if ch == 0 {
-		return lexeme{kind: xEos, value: "EOS"}
+		return lexeme{kind: xEos, value: "EOS", line: s.line}
 	}
+	tokenLine := s.line
 
 	// գործողության անուն կամ իդենտիֆիկատոր
-	if unicode.IsLetter(ch) {
+	if isIdentifierStart(ch) {
 		s.source.UnreadRune()
-		text := s.readCharsWhile(isAlphaNumeric)
+		text := s.readCharsWhile(isIdentifierPart)
 		if _, exists := operations[text]; exists {
-			return lexeme{kind: xOperation, value: text}
+			return lexeme{kind: xOperation, value: text, line: tokenLine}
 		}
 		if _, exists := registers[text]; exists {
-			return lexeme{kind: xRegister, value: text}
+			return lexeme{kind: xRegister, value: text, line: tokenLine}
 		}
 
-		return lexeme{kind: xIdent, value: text}
+		return lexeme{kind: xIdent, value: text, line: tokenLine}
 	}
 
 	// ամբողջ թիվ
 	if unicode.IsDigit(ch) {
 		s.source.UnreadRune()
 		text := s.readCharsWhile(unicode.IsDigit)
-		return lexeme{kind: xNumber, value: text}
+		return lexeme{kind: xNumber, value: text, line: tokenLine}
 	}
 
 	// այլ սիմվոլներ
@@ -66,14 +67,18 @@ func (s *scanner) scanOne() lexeme {
 		if tok == xNewLine {
 			s.line++
 		}
-		return lexeme{kind: tok, value: string(ch)}
+		return lexeme{kind: tok, value: string(ch), line: tokenLine}
 	}
 
-	return lexeme{kind: xUnknown, value: string(ch)}
+	return lexeme{kind: xUnknown, value: string(ch), line: tokenLine}
 }
 
-func isAlphaNumeric(c rune) bool {
-	return unicode.IsLetter(c) || unicode.IsDigit(c)
+func isIdentifierStart(c rune) bool {
+	return unicode.IsLetter(c) || c == '_'
+}
+
+func isIdentifierPart(c rune) bool {
+	return isIdentifierStart(c) || unicode.IsDigit(c)
 }
 
 func isSpace(c rune) bool {
