@@ -84,7 +84,7 @@ POP():
     value = memory32[SP]
 ```
 
-`SP < stack_base + 4` վիճակում pop-ը stack underflow է։ `SP + 4 > memory_size` վիճակում push-ը stack overflow է։ Սխալի դեպքում `SP`-ն և հիշողությունը չեն փոխվում։
+Սովորական stack instruction-ի ստորին սահմանը `stack_base`-ն է, եթե `FP == 0`, և ընթացիկ `FP`-ն՝ ակտիվ ֆունկցիայի ներսում։ Այդ սահմանից ներքև գտնվում են caller-ի արժեքներն ու call frame-ի ծառայողական դաշտերը։ Սահմանից վերև մեկ ամբողջ slot չլինելու դեպքում pop-ը stack underflow է։ `SP + 4 > memory_size` վիճակում push-ը stack overflow է։ Սխալի դեպքում `SP`-ն և հիշողությունը չեն փոխվում։
 
 Ֆունկցիայի frame-ի ծառայողական արժեքները նույնպես գտնվում են նույն ստեկում և նկարագրված են [`abi.md`](abi.md)-ում։
 
@@ -120,6 +120,8 @@ address = register + displacement
 ```
 
 Բացասական կամ 65535-ից մեծ արդյունքը runtime error է։
+
+Ռեգիստրի արժեքը վերցվում է instruction-ի operand-ն ամբողջությամբ կարդալուց հետո, բայց մինչև նրա stack effect-ը։ Հետևաբար `SP`-relative հասցեն օգտագործում է push/pop-ից առաջ եղած `SP`-ն, իսկ `IP`-relative հասցեն՝ հաջորդ instruction-ի հասցեն։
 
 ## Բեռնումից առաջ ստուգումներ
 

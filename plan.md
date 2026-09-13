@@ -1,128 +1,89 @@
 # SVM v1-ի զարգացման պլան
 
-Նպատակն է կառուցել հստակ սահմանված **SVM v1**, որը հնարավոր կլինի օգտագործել և՛ որպես ինքնուրույն վիրտուալ մեքենա, և՛ որպես կոմպիլյատորի նպատակային մեքենա։ Հիմքը պետք է լինի library-first ճարտարապետություն, որի վրա նույն կերպ կաշխատեն ասեմբլերը, արտաքին կոմպիլյատորը և CLI-ն։
+Նպատակն է կառուցել փոքր և ամբողջական ուսումնական ստեկային վիրտուալ մեքենա, որը հնարավոր կլինի օգտագործել և՛ հրամանային տողից, և՛ որպես ուսումնական կոմպիլյատորի նպատակային մեքենա։
 
-## Թիրախային ճարտարապետությունը
+Մեքենան պետք է այնքան պարզ լինի, որ դրա հիշողությունը, instruction encoding-ը, call frame-ը և fetch–decode–execute ցիկլը հնարավոր լինի ամբողջությամբ բացատրել առանց production runtime-ի լրացուցիչ շերտերի։
+
+## Թիրախային կառուցվածքը
 
 ```text
 Assembler source ──> assembler ──┐
-                                 ├──> bytecode.Builder ──> Program ──> Encoder
+                                 ├──> bytecode.Builder ──> Program ──> .svm
 Compiler AST/IR ─────────────────┘                              │
                                                                ▼
-.svm executable ──> Decoder ──> Verifier ──> VM ──> Host I/O / Result
+                                                     Machine.Load/Run
 ```
 
-Առաջարկվող փաթեթները՝
+Հիմնական փաթեթները՝
 
-- `isa` — հրամանների հավաքածուի միակ հեղինակավոր նկարագրությունը։
-- `bytecode` — հրամանների կոդավորում, ապակոդավորում և ծրագրի ձևաչափ։
-- `assembler` — տեքստից `bytecode.Program`։
-- `linker` — նշանների և relocation-ների լուծում։
-- `vm` — մեկուսացված կատարման շարժիչ։
-- `cmd/svm` — բարակ հրամանային ինտերֆեյս։
-- `debug` — disassembler, trace և breakpoint-ներ։
-- `docs` — ISA, ABI, assembler և binary format specification։
+- `bytecode` — opcode-ներ, instruction encoding, `Program` և `Builder`,
+- `assembler` — տեքստային ծրագրից `Program`,
+- `machine` — հիշողություն, երեք ռեգիստր և կատարման ցիկլ,
+- `cmd/svm` — assemble/run հրամանային գործիք։
+
+Առանձին linker, object format, syscall layer կամ function metadata առաջին տարբերակում չի նախատեսվում։
 
 ## Փուլ 0․ ներկա վիճակի կայունացում
 
-Նախ անհրաժեշտ է ավարտել կամ համակարգել արդեն առկա չպահպանված փոփոխությունները։
+Կարգավիճակ՝ **ավարտված**։
 
-- Վերականգնել բոլոր թեստերի անցումը։
-- Ուղղել assembler-ի ներկայիս panic-ը `assembler/parser_test.go` ֆայլում։
-- Սահմանել ներկա բայթ-կոդի golden fixture-ներ, որպեսզի հետագա փոփոխությունները տեսանելի լինեն։
-- Առանձնացնել պատահական սխալների ուղղումները ճարտարապետական վերափոխումներից։
-- Ներկա v0 ձևաչափը փաստագրել այնքանով, որքանով պետք է migration-ը հասկանալու համար։
-
-Ավարտի չափանիշ՝ `go test ./...` ամբողջությամբ անցնում է։
+- Թեստային հավաքածուն կայունացված է։
+- Parser-ը մերժում է սխալ operand-ները, overflow-ը և կրկնված label-ները։
+- Builder-ը հայտնաբերում է չսահմանված label-ները։
+- Հարաբերական բացասական հասցեավորումն ուղղված է։
+- VM-ի հիշողության, ստեկի և call frame-ի սահմանները ստուգվում են։
+- Ավելացված են golden, malformed-input, end-to-end և recursion թեստեր։
+- v0 format-ը նկարագրված է [`docs/v0-bytecode.md`](docs/v0-bytecode.md)-ում։
 
 ## Փուլ 1․ SVM v1 specification
 
-Նախ կոդից անկախ պետք է սահմանել մեքենայի պայմանագիրը։
+Կարգավիճակ՝ **պատրաստ է վերանայման**։
 
-Առաջարկվող հիմնական որոշումները՝
+Քննարկման նախագիծը սկսվում է [`docs/specification.md`](docs/specification.md) ինդեքսից։
+
+Հիմնական առաջարկները՝
 
 - արժեք՝ նշանով 32-բիթանոց ամբողջ թիվ,
-- հասցե՝ 32-բիթանոց աննշան ամբողջ թիվ,
-- հիշողություն՝ byte-addressed,
-- byte order՝ little-endian,
-- բառի չափ՝ 4 բայթ,
-- ստեկն աճում է դեպի մեծ հասցեներ,
-- 32-բիթանոց բեռնումներն ու գրառումները պահանջում են 4-բայթանոց հավասարեցում,
-- թվաբանական overflow-ը սահմանվում է որպես 32-բիթանոց wraparound,
-- սխալ կատարումը հանգեցնում է typed trap-ի, ոչ թե Go `panic`-ի։
+- static հասցե՝ 16 բիթ,
+- հիշողություն՝ առավելագույնը 64 ԿԲ, default՝ 16 ԿԲ,
+- մեկ byte-addressed little-endian հիշողություն,
+- `IP`, `SP`, `FP` երեք ռեգիստր,
+- code → data → stack պարզ դասավորություն,
+- ներկայիս `00/01/10` instruction encoding-ի պահպանում,
+- լոկալների հատկացում սովորական `PUSH 0`-ներով,
+- callee cleanup՝ `RET n`,
+- `INPUT`/`PRINT` իրական opcode-ներ՝ ներարկվող I/O հոսքերով,
+- 12-բայթանոց versioned executable header,
+- պարզ `RuntimeError`՝ առանց մեծ trap hierarchy-ի։
 
-Պետք է ստեղծվեն առնվազն՝
+Specification-ի հաստատումից առաջ implementation-ը չի սկսվում։
 
-- `docs/isa.md`,
-- `docs/memory.md`,
-- `docs/abi.md`,
-- `docs/bytecode-format.md`,
-- `docs/assembly-language.md`։
+## Փուլ 2․ v1 instruction encoding և Program
 
-Քանի որ ներկա ձևաչափը չվերսիոնավորված և դեռ անկայուն է, SVM v1-ում թույլատրվում է վերահսկվող անհամատեղելի փոփոխություն։
+- Սահմանել opcode/mode-ի մեկ հեղինակավոր աղյուսակ։
+- Պահպանել v0-ի 0–24 opcode արժեքները։
+- Ավելացնել `DROP`, `DUP`, `SWAP`, `XOR`, `SHL`, `SHR`, `JNZ`, `LOAD`, `STORE`, `LOADB`, `STOREB`։
+- `RET`-ի Short ձևում կոդավորել մաքրվող արգումենտների քանակը։
+- Իրականացնել անվտանգ instruction encoder/decoder։
+- Ավելացնել կառուցվածքային `Program`՝ `Entry`, `Code`, `Data` դաշտերով։
+- Decoder-ում ստուգել mode-ը, operand-ի ամբողջականությունը և instruction boundary-ները։
 
-Քննարկման նախագիծը սկսվում է [`docs/specification.md`](docs/specification.md) ինդեքսից և դեռ իրականացված վարք չի համարվում։
+Ավարտի չափանիշ՝ բոլոր instruction-ների encode/decode golden և round-trip թեստերը կանաչ են։
 
-## Փուլ 2․ ISA-ի միասնական մոդել
+## Փուլ 3․ compiler-facing Builder
 
-Այս պահին opcode-ների մասին գիտելիքը բաշխված է տարբեր փաթեթներում։ Պետք է ունենալ մեկ աղյուսակ, որը յուրաքանչյուր հրամանի համար սահմանում է՝
+Կոմպիլյատորը չպետք է assembler text գեներացնելու կարիք ունենա։
 
-- opcode,
-- mnemonic,
-- operand-ների տեսակները,
-- instruction size,
-- ստեկի ազդեցությունը,
-- թույլատրելի addressing mode-երը,
-- հնարավոր trap-երը։
-
-Նվազագույն ամբողջական ISA-ն պետք է ներառի՝
-
-- ստեկ՝ `PUSH`, `DROP`, `DUP`, `SWAP`, `SLIDE`,
-- հիշողություն՝ `LOAD8`, `LOAD32`, `STORE8`, `STORE32`, `ADDR`,
-- թվաբանություն՝ `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `NEG`,
-- բիթային գործողություններ՝ `AND`, `OR`, `XOR`, `NOT`, `SHL`, `SHR`,
-- համեմատումներ՝ `EQ`, `NE`, `LT`, `LE`, `GT`, `GE`,
-- կառավարում՝ `JUMP`, `JZ`, `JNZ`, `CALL`, `RET`, `HALT`,
-- host ծառայություն՝ `SYSCALL` կամ համարժեք trap interface։
-
-`INPUT` և `PRINT` հրամանները կարելի է պահպանել որպես assembler shorthand, բայց VM-ի հիմքում I/O-ն պետք է լինի host abstraction, որպեսզի ներկառուցվող VM-ը կախված չլինի `os.Stdin`-ից և `fmt.Println`-ից։
-
-## Փուլ 3․ ծրագրի և binary format-ի ստեղծում
-
-Հում `[]byte`-ի փոխարեն անհրաժեշտ է կառուցվածքային `Program`։
-
-Այն պետք է ունենա՝
-
-- magic number,
-- format version,
-- entry point,
-- code section,
-- read-only data section,
-- mutable data section,
-- BSS չափ,
-- պահանջվող հիշողության չափ,
-- optional symbol table,
-- optional source/debug metadata։
-
-Հիմնական ֆայլային ձևաչափերը՝
-
-- `.svm` — կատարվող ծրագիր,
-- `.svo` — relocatable object file, երբ ավելացվի բազմամոդուլ կոմպիլյացիան։
-
-Decoder-ը պետք է մերժի սխալ version-ը, կտրված հրահանգները, անվավեր opcode-ները և section-ների սահմաններից դուրս հասցեները։
-
-## Փուլ 4․ կոմպիլյատորի համար հանրային API
-
-Կոմպիլյատորը չպետք է ստիպված լինի տեքստային assembler գեներացնել։ Այն պետք է կարողանա անմիջապես կառուցել ծրագիր։
-
-Նախատեսվող API-ի գաղափարը՝
+Առաջարկվող օգտագործումը՝
 
 ```go
 builder := bytecode.NewBuilder()
-main := builder.NewLabel("main")
+main := builder.Label("main")
 
+builder.Code()
 builder.Mark(main)
 builder.PushInt(42)
+builder.Print()
 builder.Halt()
 
 program, err := builder.Build(bytecode.BuildOptions{
@@ -130,230 +91,160 @@ program, err := builder.Build(bytecode.BuildOptions{
 })
 ```
 
-API-ն պետք է ապահովի՝
+Builder-ը պետք է ապահովի՝
 
 - typed instruction emission,
-- labels և relocations,
-- code/data sections,
-- constants և string literals,
-- globals,
-- source locations,
-- symbol/debug metadata,
-- կառուցման ժամանակ operand range validation,
-- undefined և duplicate symbol diagnostics։
+- code/data հատվածների ընտրություն,
+- code և data label-ներ,
+- forward reference-ներ,
+- թվեր, բայթեր և string տվյալներ,
+- entry point,
+- operand range validation,
+- duplicate և undefined label diagnostics,
+- deterministic `Program`։
 
-Ներկայիս `Validate() bool` մոտեցումը պետք է փոխարինվի իմաստալից `error` կամ diagnostics ցուցակով։
+Ավարտի չափանիշ՝ Builder-ով կառուցված factorial/global/array ծրագրերը աշխատում են առանց assembler-ի։
 
-## Փուլ 5․ assembler-ի ամբողջականացում
+## Փուլ 4․ assembler-ի ամբողջականացում
 
-Assembler-ը պետք է դառնա նույն builder-ի frontend-ը։
+Assembler-ը պետք է դառնա Builder-ի փոքր տեքստային frontend-ը։
 
-Անհրաժեշտ հնարավորությունները՝
+Ավելացնել՝
 
-- `io.Reader`-ից և string-ից assemble անող API,
-- ֆայլային wrapper միայն CLI մակարդակում,
-- հստակ source position՝ ֆայլ, տող, սյուն,
-- թվեր՝ տասնորդական, hexadecimal և binary,
-- string և character literals,
-- label expressions՝ `label + 4`,
-- մեկնաբանություններ,
-- case-sensitivity-ի հստակ կանոն,
-- sections և directives։
+- `io.Reader` և string source API,
+- source file/line/column diagnostics,
+- decimal, hexadecimal և binary թվեր,
+- `@label` հասցեներ,
+- `.code`, `.data`, `.entry`,
+- `.byte`, `.word`, `.string`, `.stringz`, `.zero`, `.align`,
+- code/data label validation,
+- EOF-ով ավարտվող տողի աջակցություն։
 
-Նախնական directives՝
+Չավելացնել macros, include, object/linker directives կամ function metadata։
 
-```asm
-.entry main
-.code
-.data
-.word 42
-.byte 0xff
-.string "hello"
-.zero 64
-.align 4
-.global main
-.extern print_i32
-```
+Ավարտի չափանիշ՝ assembler-ի և Builder-ի համարժեք ծրագրերը տալիս են նույն `Program`-ը։
 
-Assembler-ը պարտադիր պետք է հայտնաբերի՝
+## Փուլ 5․ ֆունկցիաների ABI
 
-- անհայտ mnemonic,
-- պակասող կամ ավելորդ operand,
-- սխալ addressing mode,
-- թվային overflow,
-- կրկնված label,
-- չսահմանված symbol,
-- սխալ section օգտագործում։
+- Պահպանել հիշողությունում տեսանելի call frame-ը։
+- Արգումենտները push անել ձախից աջ։
+- `CALL`-ով պահել վերադարձի `IP`-ն և հին `FP`-ը։
+- Լոկալները հատկացնել `PUSH 0` հրահանգներով։
+- Իրականացնել `RET n`, որը վերադարձնում է մեկ արժեք և հեռացնում `n` արգումենտ։
+- Սահմանել `RET` որպես `RET 0`։
+- Void ֆունկցիաներին պարտադրել վերադարձնել `0`։
 
-Ցանկալի է իրականացնել lexer → parser/AST → semantic validation → emission շղթայով, ոչ թե անմիջապես token-ներից bytecode գրելով։
+Ավարտի չափանիշ՝ պարզ, nested, մի քանի արգումենտով և recursive կանչերի թեստերն անցնում են։
 
-## Փուլ 6․ ABI և կանչերի պայմանագիր
+## Փուլ 6․ Machine runtime
 
-Կոմպիլյատորի համար սա ամենակարևոր պայմանագիրն է։
-
-Պետք է վերջնականապես սահմանել՝
-
-- արգումենտների տեղադրման հերթականությունը,
-- վերադարձվող արժեքների քանակը,
-- caller-saved/callee-saved վիճակը,
-- `FP`-ի նշանակությունը,
-- return address-ի և նախորդ `FP`-ի դիրքերը,
-- լոկալների դասավորությունը,
-- ստեկի մաքրող կողմը,
-- ծրագրի entry point-ի պայմանագիրը։
-
-Առաջարկվող տարբերակ՝
-
-- բոլոր արժեքները մեկ 32-բիթանոց slot են,
-- caller-ը հերթով push է անում արգումենտները,
-- `CALL`-ը պահպանում է return address-ը և նախորդ `FP`-ը,
-- ֆունկցիան միշտ վերադարձնում է մեկ slot,
-- `RET`-ից հետո caller-ը `SLIDE n`-ով հեռացնում է արգումենտները՝ պահպանելով արդյունքը,
-- void արդյունքը ներկայացվում է `0`-ով։
-
-Պետք է ունենալ առանձին օրինակներ recursion-ի, nested call-ի և մի քանի արգումենտով ֆունկցիայի համար։
-
-## Փուլ 7․ VM runtime-ի վերակառուցում
-
-Ներկա runtime-ն անմիջապես աշխատում է ներքին հիշողության, `fmt`-ի և panic-ների հետ։ Նոր runtime-ը պետք է ունենա այսպիսի օգտագործման ձև՝
+Առաջարկվող API-ն՝
 
 ```go
-machine, err := vm.New(vm.Config{
-    MemorySize: 1 << 20,
-    Host:       host,
-    MaxSteps:   1_000_000,
+machine, err := machine.New(machine.Config{
+    MemorySize: 16 * 1024,
+    Input:      input,
+    Output:     output,
 })
 
-result, err := machine.Run(ctx, program)
+if err := machine.Load(program); err != nil {
+    // invalid program
+}
+if err := machine.Run(); err != nil {
+    // runtime error
+}
 ```
 
 Պահանջվող հնարավորությունները՝
 
+- configurable, առավելագույնը 64 ԿԲ հիշողություն,
 - `Load`, `Reset`, `Run`, `Step`,
-- configurable memory,
-- custom host I/O,
-- execution step limit,
-- `context.Context`-ով ընդհատում,
-- typed traps,
-- machine state-ի read-only snapshot,
-- deterministic execution,
-- stack underflow/overflow պաշտպանություն,
-- instruction fetch bounds,
-- alignment checks,
-- code/data սահմանների ստուգում,
-- division և modulo by zero traps,
-- invalid opcode/mode traps։
+- `IP`, `SP`, `FP` վիճակի read-only դիտարկում,
+- ներարկվող input/output հոսքեր,
+- հիշողության և ստեկի սահմանների ստուգում,
+- անվավեր opcode/mode/branch target-ի ստուգում,
+- զրոյի վրա բաժանման և I/O սխալների վերադարձ,
+- պարզ `RuntimeError{IP, Message}`,
+- սովորական ծրագրային սխալների դեպքում panic-ի բացակայություն։
 
-Հանրային API-ի սովորական սխալներից ոչ մեկը չպետք է ավարտվի Go panic-ով։
+Optional step limit-ը կարելի է ավելացնել որպես `RunOptions`, եթե անվերջ ցիկլով թեստերի համար անհրաժեշտ լինի։
 
-## Փուլ 8․ verifier և debugger գործիքներ
+## Փուլ 7․ executable format և CLI
 
-Verifier-ը մինչև կատարումը պետք է ստուգի՝
+`.svm` ֆայլը կունենա 12-բայթանոց header՝
 
-- instruction boundaries,
-- jump/call target-ներ,
-- operand encoding,
-- entry point,
-- section limits,
-- ակնհայտ stack-effect անհամապատասխանություններ։
+```text
+magic/version  4 բայթ
+entry          2 բայթ
+code_size      2 բայթ
+data_size      2 բայթ
+flags          2 բայթ
+```
 
-Debugger-ի առաջին տարբերակը՝
+Ֆայլում header-ից հետո գրվում են code, zero padding և data բայթերը։ Symbol/debug table կամ checksum չկա։
 
-- instruction trace,
-- register dump,
-- stack dump,
-- breakpoints,
-- step/continue,
-- disassembler,
-- symbol անունների ցուցադրում։
-
-Սա միաժամանակ շատ օգտակար կլինի կոմպիլյատորից գեներացված սխալ կոդը հետազոտելու համար։
-
-## Փուլ 9․ CLI
-
-Մեկ `svm` executable՝ ենթահրամաններով։
+CLI հրամանները՝
 
 ```sh
 svm asm program.asm -o program.svm
 svm run program.svm
 svm exec program.asm
-svm check program.svm
 svm disasm program.svm
-svm debug program.svm
-svm version
 ```
 
-Կարևոր դրոշներ՝
+Օգտակար option-ներ՝ `--memory`, `--trace`, `--input`։ CLI-ն պետք է ունենա stdout/stderr-ի հստակ տարանջատում և կանխատեսելի exit code-եր։
 
-- `--memory`,
-- `--max-steps`,
-- `--trace`,
-- `--entry`,
-- `--strip`,
-- `--debug-info`։
+## Փուլ 8․ թեստավորում և փաստաթղթեր
 
-CLI-ն պետք է ունենա կանխատեսելի exit code-եր և stdout/stderr-ի հստակ տարանջատում։
+Թեստերը պետք է ներառեն՝
 
-## Փուլ 10․ թեստավորում և որակի շեմ
-
-Թեստային շերտերը՝
-
-- յուրաքանչյուր ISA հրամանի unit test,
+- յուրաքանչյուր instruction-ի unit test,
 - encoder/decoder round-trip,
-- assembler golden tests,
-- malformed input tests,
-- VM trap tests,
-- ABI contract tests,
-- assembler-vs-builder bytecode equivalence,
-- end-to-end ծրագրեր,
-- fuzz tests՝ lexer, parser, decoder և verifier,
-- deterministic output tests։
+- assembler golden և malformed-input թեստեր,
+- Builder-vs-assembler equivalence,
+- memory/stack/runtime error թեստեր,
+- ABI contract և recursion թեստեր,
+- executable decode-ի կտրված/սխալ input-ներ,
+- end-to-end օրինակներ։
 
-Պարտադիր end-to-end օրինակներ՝
+Պարտադիր օրինակ ծրագրերը՝
 
 - թվաբանական հաշվարկ,
-- պայման և ցիկլ,
-- ֆունկցիայի կանչ,
-- recursion,
-- globals,
-- array կամ string memory access,
-- host I/O,
-- կոմպիլյատորի API-ով կառուցված նույն ծրագրի կատարում։
+- `if` և `while`,
+- երկու թվերից մեծը,
+- recursive factorial,
+- global counter,
+- array/string traversal,
+- input/output։
 
-## Փուլ 11․ փաստաթղթեր և թողարկում
-
-- README-ն դարձնել արագ մեկնարկի ուղեցույց։
-- Ավելացնել assembler reference։
-- Ավելացնել compiler backend integration guide։
-- Նկարագրել ABI-ն և executable format-ը։
-- Սահմանել semantic versioning։
-- Եթե փաթեթը հրապարակվելու է, `module svm`-ը փոխարինել կայուն repository module path-ով։
-- Ավելացնել CI՝ formatting, tests, race detector և cross-platform build ստուգումներով։
+README-ն պետք է պարունակի build/run արագ մեկնարկ, իսկ `docs/`-ը՝ հաստատված machine/ISA/ABI/assembler reference-ը։
 
 ## Առաջին թողարկման սահմանները
 
-SVM v1-ի համար նպատակահարմար է չներառել՝
+SVM v1.0-ում չկան՝
 
-- JIT,
-- garbage collector,
+- JIT և floating-point,
+- heap/GC,
 - threads,
-- floating-point,
-- dynamic linking,
-- ուղիղ filesystem կամ network հասանելիություն։
-
-Դրանք կարելի է ավելացնել հետագայում՝ առանց հիմնական ISA/ABI-ն կոտրելու։ Առաջին լիարժեք տարբերակի շեմը պետք է լինի անվտանգ, deterministic և debug-friendly 32-բիթանոց VM, որը կարող է կատարել իրական կոմպիլյատորի գեներացրած ֆունկցիաներ, globals, ցիկլեր, պայմաններ և պարզ տվյալային կառուցվածքներ։
+- memory permissions,
+- syscall կամ plugin ABI,
+- `.svo` object files և linker,
+- `.global`/`.extern`,
+- symbol/debug section-ներ,
+- interactive debugger,
+- macros և includes։
 
 ## Իրականացման հերթականությունը
 
 ```text
-baseline
-  → specification
-  → ISA և binary format
-  → builder API
+specification review
+  → instruction encoding և Program
+  → Builder
   → assembler
-  → ABI և VM runtime
-  → CLI և debugger
-  → fuzzing, փաստաթղթեր և թողարկում
+  → RET n ABI
+  → Machine runtime
+  → executable/CLI
+  → end-to-end tests և փաստաթղթեր
 ```
 
-Յուրաքանչյուր փուլ պետք է ավարտվի անցնող թեստերով և առանձին ստուգելի արդյունքով՝ առանց հաջորդ փուլի անավարտ կոդից կախված լինելու։
+Յուրաքանչյուր փուլ պետք է ավարտվի անցնող թեստերով և առանձին ստուգելի արդյունքով։
